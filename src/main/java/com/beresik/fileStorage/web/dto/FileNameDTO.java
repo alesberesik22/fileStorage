@@ -10,5 +10,7 @@ import java.util.UUID;
 public class FileNameDTO {
 
     private String fileName;
+    private String fileType;
     private UUID id;
+    private String folderPath;
 }

@@ -23,6 +23,7 @@ public class FileModel {
     private UUID fileid;
     private String filename;
     private String filetype;
+    private String folderpath;
 
     private byte[] data;
 
@@ -33,13 +34,11 @@ public class FileModel {
         this.filetype = fileType;
     }
 
-    public FileModel(String fileName, String fileType, byte[] data) {
+    public FileModel(String fileName, String fileType, byte[] data, String folderPath) {
         this.filename = fileName;
         this.filetype = fileType;
         this.data = data;
+        this.folderpath = folderPath;
     }
 
-    public InputStream getInputStreamData() {
-        return new ByteArrayInputStream(data);
-    }
 }

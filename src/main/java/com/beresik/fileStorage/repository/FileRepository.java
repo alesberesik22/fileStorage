@@ -8,4 +8,8 @@ import java.util.UUID;
 
 @Repository
 public interface FileRepository extends JpaRepository<FileModel, UUID> {
+
+    FileModel findByFilename(String fileName);
+    FileModel findByFolderpath(String path);
+    FileModel findByFilenameAndFolderpath(String fileName, String folderPath);
 }
