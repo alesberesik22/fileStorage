@@ -15,11 +15,7 @@ import java.io.File;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.io.IOException;
-import java.nio.file.*;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,14 +30,20 @@ public class FolderService {
     @Autowired
     private FileService fileService;
 
+    @Autowired
+    private EncryptionService encryptionService;
+
     public List<FileInfo> getAllFilesInFolder(String folderPath) {
         List<FileInfo> fileInfos = new ArrayList<>();
-        try (DirectoryStream<Path> directoryStream = Files.newDirectoryStream(Paths.get(defaultFolderConfig.getPath() + File.separator + folderPath))) {
+        final String encryptedFolder = encryptionService.encryptPath(folderPath);
+        try (DirectoryStream<Path> directoryStream = Files.newDirectoryStream(Paths.get(defaultFolderConfig.getPath() + File.separator + encryptedFolder))) {
             for (Path path : directoryStream) {
-                FileInfo fileInfo = new FileInfo();
-                fileInfo.setFileName(path.getFileName().toString());
-                fileInfo.setFilePath(path.toString());
-                fileInfos.add(fileInfo);
+                if (!Files.isDirectory(path)) {
+                    FileInfo fileInfo = new FileInfo();
+                    fileInfo.setFileName(path.getFileName().toString());
+                    fileInfo.setFilePath(path.toString());
+                    fileInfos.add(fileInfo);
+                }
             }
         } catch (IOException ex) {
             throw new FolderNotFoundException("Folder does not exist", ex);
@@ -49,15 +51,17 @@ public class FolderService {
         return fileInfos;
     }
 
+    @SneakyThrows
     public void deleteFolder(String folderPath) {
         try {
-            Path pathToDelete = Paths.get(defaultFolderConfig.getPath() + File.separator + folderPath);
+            final String encryptedFolder = encryptionService.encryptPath(folderPath);
+            Path pathToDelete = Paths.get(defaultFolderConfig.getPath() + File.separator + encryptedFolder);
             Files.walk(pathToDelete)
                     .sorted(Comparator.reverseOrder())
                     .map(Path::toFile)
                     .forEach(File::delete);
             fileRepository.findAll().stream()
-                    .filter(fileModel -> fileModel.getFilename().startsWith(folderPath + File.separator))
+                    .filter(fileModel -> fileModel.getFilename().startsWith(encryptedFolder + File.separator))
                     .forEach(fileModel -> fileRepository.delete(fileModel));
         } catch (IOException ex) {
             throw new FolderNotFoundException("Folder does not exist", ex);
@@ -74,8 +78,10 @@ public class FolderService {
 
     public void updateFolderName(String folderPath, String newFolderName) {
         try {
-            Path oldFolderPath = Paths.get(defaultFolderConfig.getPath() + File.separator + folderPath);
-            Path newFolderPath = oldFolderPath.getParent().resolve(newFolderName);
+            final String encryptedFolderPath = encryptionService.encryptPath(folderPath);
+            final String encryptedNewFolderName = encryptionService.encrypt(newFolderName);
+            Path oldFolderPath = Paths.get(defaultFolderConfig.getPath() + File.separator + encryptedFolderPath);
+            Path newFolderPath = oldFolderPath.getParent().resolve(encryptedNewFolderName);
             Files.move(oldFolderPath, newFolderPath);
         } catch (IOException ex) {
             throw new FolderNotFoundException("Folder does not exist", ex);
@@ -83,28 +89,29 @@ public class FolderService {
     }
 
     public List<FolderInfo> getAllFolders() {
+        List<FolderInfo> folderInfos = new ArrayList<>();
         try {
-            List<FolderInfo> folderInfos = new ArrayList<>();
             Files.walk(Paths.get(defaultFolderConfig.getPath()))
                     .filter(Files::isDirectory)
                     .forEach(path -> {
                         FolderInfo folderInfo = new FolderInfo();
-                        folderInfo.setFolderPath(path.toString());
-                        folderInfo.setParentFolder(path.getParent() != null ? path.getParent().toString() : null);
+                        folderInfo.setFolderPath(encryptionService.decryptPath(path.toString()));
+                        folderInfo.setParentFolder(path.getParent() != null ? encryptionService.decryptPath(path.getParent().toString()) : null);
                         folderInfo.setChildFolders(getChildFolders(path));
                         folderInfos.add(folderInfo);
                     });
-            return folderInfos;
         } catch (IOException e) {
-            throw new DirectoryReadException("Error reading directory", e);
+            // Log the exception and return an empty list
+            System.err.println("Error reading directory: " + e.getMessage());
         }
+        return folderInfos;
     }
 
     private List<String> getChildFolders(Path parentPath) {
         try {
             return Files.list(parentPath)
                     .filter(Files::isDirectory)
-                    .map(Path::toString)
+                    .map(path -> encryptionService.decryptPath(path.toString()))
                     .collect(Collectors.toList());
         } catch (IOException e) {
             throw new DirectoryReadException("Error reading child directories", e);
@@ -113,19 +120,28 @@ public class FolderService {
 
     public void createNestedFolders(String folderPath) {
         String[] folders = folderPath.split("/");
+        Arrays.stream(folders).forEach(System.out::println);
         String path = "";
         for (String folder : folders) {
-            path += folder;
+            if (!path.isEmpty()) {
+                path += "/";
+            }
+            String encryptedFolder = encryptionService.encrypt(folder);
+            System.out.println("encrypted: " + encryptedFolder);
+            path += encryptedFolder;
             createFolder(path);
-            path += "/";
         }
     }
 
     @SneakyThrows
     public void copyFolder(String sourceFolder, String destinationFolder) {
-        final String destination = Objects.equals(destinationFolder, " ") ? defaultFolderConfig.getPath() : destinationFolder;
-        Path srcPath = Paths.get(defaultFolderConfig.getPath(), sourceFolder);
-        Path destPath = Paths.get(defaultFolderConfig.getPath(), destination);
+        final String destination = Objects.equals(destinationFolder, " ") ? defaultFolderConfig.getPath() : encryptionService.encryptPath(destinationFolder);
+        Path srcPath = Paths.get(defaultFolderConfig.getPath(), encryptionService.encryptPath(sourceFolder));
+        Path destPath = destinationFolder.trim().isEmpty()
+                ? Paths.get(defaultFolderConfig.getPath())
+                : Paths.get(defaultFolderConfig.getPath(), destination);
+        System.out.println("srcPath: " + srcPath.toString());
+        System.out.println("destPath: " + destPath.toString());
 
         Path srcParentPath = srcPath.getParent();
         Files.walkFileTree(srcPath, new SimpleFileVisitor<Path>() {
@@ -150,16 +166,27 @@ public class FolderService {
         });
     }
 
+    //TODO: refactor this method
     @SneakyThrows
     public void moveFolder(String sourceFolder, String destinationFolder) {
-        Path srcPath = Paths.get(defaultFolderConfig.getPath(), sourceFolder);
-        Path destPath = Paths.get(defaultFolderConfig.getPath(), destinationFolder);
+        final String encryptedSourceFolder = encryptionService.encryptPath(sourceFolder);
+        final String encryptedDestinationFolder = destinationFolder.trim().isEmpty()
+                ? ""
+                : encryptionService.encryptPath(destinationFolder);
+        Path srcPath = Paths.get(defaultFolderConfig.getPath(), encryptedSourceFolder);
+        Path destPath = Paths.get(defaultFolderConfig.getPath(), encryptedDestinationFolder);
 
+        // Check if source folder exists
+        if (!Files.exists(srcPath)) {
+            throw new IllegalArgumentException("Source folder does not exist: " + sourceFolder);
+        }
+
+        // Move the contents from the source folder to the destination folder
         Files.walk(srcPath).forEach(source -> {
             Path destination = Paths.get(destPath.toString(), source.toString()
                     .substring(srcPath.toString().length()));
             try {
-                Files.move(source, destination);
+                Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException e) {
                 throw new DirectoryReadException("Error moving folder", e);
             }
@@ -169,12 +196,14 @@ public class FolderService {
     }
 
     private void updateFilePathsInDatabase(String oldPath, String newPath) {
+        final String encryptedOldPath = encryptionService.encryptPath(oldPath);
+        final String encryptedNewPath = encryptionService.encryptPath(newPath);
         List<FileModel> filesToUpdate = fileRepository.findAll().stream()
-                .filter(fileModel -> fileModel.getFolderpath().startsWith(oldPath))
+                .filter(fileModel -> fileModel.getFolderpath().startsWith(encryptedOldPath))
                 .collect(Collectors.toList());
 
         filesToUpdate.forEach(fileModel -> {
-            String newFolderPath = fileModel.getFolderpath().replaceFirst(oldPath, newPath);
+            String newFolderPath = fileModel.getFolderpath().replaceFirst(encryptedOldPath, encryptedNewPath);
             fileModel.setFolderpath(newFolderPath);
             fileRepository.save(fileModel);
         });
@@ -186,10 +215,10 @@ public class FolderService {
         if (oldFileModel != null) {
             String newFilePathReplaced = newFilePath.getParent().toString().replaceFirst(defaultFolderConfig.getPath(), "");
             FileModel newFileModel = new FileModel();
-            newFileModel.setFilename(oldFileModel.getFilename());
-            newFileModel.setFiletype(oldFileModel.getFiletype());
-            newFileModel.setData(oldFileModel.getData());
-            newFileModel.setFolderpath(newFilePathReplaced);
+            newFileModel.setFilename(encryptionService.encrypt(oldFileModel.getFilename()));
+            newFileModel.setFiletype(encryptionService.encrypt(oldFileModel.getFiletype()));
+            newFileModel.setData(encryptionService.encrypt(oldFileModel.getData()));
+            newFileModel.setFolderpath(encryptionService.encryptPath(newFilePathReplaced));
             fileRepository.save(newFileModel);
         }
     }

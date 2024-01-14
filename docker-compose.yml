@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - 8082:8082
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/fileStorage
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=PLAINTEXT://kafka-broker-1:9092,PLAINTEXT_INTERNAL://localhost:19092
+    depends_on:
+      - db
+    container_name: file-storage
+
+  db:
+    image: postgres:13
+    ports:
+      - 5434:5432
+    environment:
+      - POSTGRES_DB=fileStorage
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+    container_name: file-storage-db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+volumes:
+  postgres_data:

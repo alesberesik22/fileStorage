@@ -4,6 +4,7 @@ import com.beresik.fileStorage.model.FileInfo;
 import com.beresik.fileStorage.model.FileModel;
 import com.beresik.fileStorage.model.FolderInfo;
 import com.beresik.fileStorage.repository.FileRepository;
+import com.beresik.fileStorage.service.EncryptionService;
 import com.beresik.fileStorage.service.FolderService;
 import com.beresik.fileStorage.web.dto.FileNameDTO;
 import com.beresik.fileStorage.web.mapper.FileNameMapper.FileNameMapper;
@@ -20,18 +21,25 @@ public class FolderController {
 
     private final FolderService folderService;
     private final FileRepository fileRepository;
+    private final EncryptionService encryptionService;
 
-    public FolderController(FolderService folderService, FileRepository fileRepository) {
+    public FolderController(FolderService folderService, FileRepository fileRepository, EncryptionService encryptionService) {
         this.folderService = folderService;
         this.fileRepository = fileRepository;
+        this.encryptionService = encryptionService;
     }
 
     @GetMapping()
     public ResponseEntity<List<FileNameDTO>> getAllFilesInFolder(@RequestHeader String folder) {
         List<FileInfo> fileInfos = folderService.getAllFilesInFolder(folder);
-        List<FileModel> fileModels = fileRepository.findAll().stream()
-                .filter(fileModel -> fileInfos.stream()
-                        .anyMatch(fileInfo -> fileInfo.getFilePath().contains(fileModel.getFolderpath())))
+        //get fiiles from db by filename and filePath
+        List<FileModel> fileModels = fileInfos.stream()
+                .map(fileInfo -> fileRepository.findByFilenameAndFolderpath(fileInfo.getFileName(), encryptionService.encryptPath(folder)))
+                .peek(fileModel -> {
+                    fileModel.setFilename(encryptionService.decryptPath(fileModel.getFilename()));
+                    fileModel.setFolderpath(encryptionService.decryptPath(fileModel.getFolderpath()));
+                    fileModel.setFiletype(encryptionService.decryptPath(fileModel.getFiletype()));
+                })
                 .collect(Collectors.toList());
         return ResponseEntity.ok(FileNameMapper.mapFileNamesToDto(fileModels));
     }
