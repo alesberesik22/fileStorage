@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/folder")
+@RequestMapping("/fileStorage/folder")
 public class FolderController {
 
     private final FolderService folderService;

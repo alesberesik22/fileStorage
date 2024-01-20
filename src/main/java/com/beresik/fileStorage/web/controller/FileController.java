@@ -22,7 +22,7 @@ import java.util.UUID;
 import java.sql.SQLException;
 
 @RestController
-@RequestMapping("/file")
+@RequestMapping("/fileStorage/file")
 public class FileController {
 
     private final FileService fileService;
